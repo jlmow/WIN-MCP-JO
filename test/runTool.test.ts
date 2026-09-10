@@ -11,12 +11,12 @@ function makeDeps(scopes: Identity["scopes"]) {
 }
 
 test("runTool returns tool content and audits success when the scope is present", async () => {
-  const { deps, auditSink } = makeDeps(["clients:read"]);
+  const { deps, auditSink } = makeDeps(["phc:clients:read"]);
 
   const result = await runTool(
     deps,
-    "list_clients",
-    "clients:read",
+    "phc.list_clients",
+    "phc:clients:read",
     { search: "x" },
     (r: string[]) => ({ count: r.length }),
     async () => ["cliente-a"],
@@ -34,8 +34,8 @@ test("runTool denies and audits when the scope is missing, without calling the c
 
   const result = await runTool(
     deps,
-    "create_order",
-    "orders:write",
+    "phc.create_order",
+    "phc:orders:write",
     { clientId: "C0001" },
     () => undefined,
     async () => {

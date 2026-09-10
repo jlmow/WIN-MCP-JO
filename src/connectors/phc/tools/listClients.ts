@@ -1,13 +1,13 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { PhcConnector } from "../connectors/phc/types.js";
-import { runTool, type ToolDeps } from "./helpers.js";
+import { runTool, type ToolDeps } from "../../../tools/helpers.js";
+import type { PhcConnector } from "../types.js";
 
 export function registerListClients(server: McpServer, connector: PhcConnector, deps: ToolDeps): void {
   server.registerTool(
-    "list_clients",
+    "phc.list_clients",
     {
-      title: "Listar clientes",
+      title: "Listar clientes (PHC)",
       description:
         "Lista clientes do Cegid PHC CS, com filtro opcional por nome, NIF ou código. Não devolve dados fora dos clientes autorizados para esta integração.",
       inputSchema: {
@@ -18,8 +18,8 @@ export function registerListClients(server: McpServer, connector: PhcConnector, 
     async (args) =>
       runTool(
         deps,
-        "list_clients",
-        "clients:read",
+        "phc.list_clients",
+        "phc:clients:read",
         args,
         (clients) => ({ count: clients.length }),
         () => connector.listClients(args),

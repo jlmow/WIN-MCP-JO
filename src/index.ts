@@ -3,7 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { CredentialStore, resolveIdentityOrThrow } from "./auth/credentialStore.js";
 import { FileAuditSink } from "./audit/logger.js";
 import { loadConfig, requireApiKeyFromEnv } from "./config.js";
-import { MockPhcConnector } from "./connectors/phc/mockConnector.js";
+import { createConnectorModules } from "./modules.js";
 import { buildServer } from "./server.js";
 
 async function main(): Promise<void> {
@@ -13,9 +13,9 @@ async function main(): Promise<void> {
   const store = CredentialStore.fromFile(config.integrationsFile);
   const identity = resolveIdentityOrThrow(store, apiKey);
 
-  const connector = new MockPhcConnector();
+  const modules = createConnectorModules();
   const auditSink = new FileAuditSink(config.auditLogFile);
-  const server = buildServer(identity, connector, auditSink);
+  const server = buildServer(identity, modules, auditSink);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

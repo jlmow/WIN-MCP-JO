@@ -1,13 +1,13 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { PhcConnector } from "../connectors/phc/types.js";
-import { runTool, type ToolDeps } from "./helpers.js";
+import { runTool, type ToolDeps } from "../../../tools/helpers.js";
+import type { PhcConnector } from "../types.js";
 
 export function registerListStock(server: McpServer, connector: PhcConnector, deps: ToolDeps): void {
   server.registerTool(
-    "list_stock",
+    "phc.list_stock",
     {
-      title: "Consultar stocks",
+      title: "Consultar stocks (PHC)",
       description:
         "Lista artigos e respetivas quantidades disponíveis no Cegid PHC CS, com filtro opcional por descrição ou código.",
       inputSchema: {
@@ -18,8 +18,8 @@ export function registerListStock(server: McpServer, connector: PhcConnector, de
     async (args) =>
       runTool(
         deps,
-        "list_stock",
-        "stock:read",
+        "phc.list_stock",
+        "phc:stock:read",
         args,
         (items) => ({ count: items.length }),
         () => connector.listStock(args),

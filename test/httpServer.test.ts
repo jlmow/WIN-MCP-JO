@@ -7,6 +7,9 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { hashApiKey } from "../src/auth/credentialStore.js";
 import { InMemoryAuditSink } from "../src/audit/logger.js";
+import { createFactorialModule } from "../src/connectors/factorial/module.js";
+import { MockFactorialConnector } from "../src/connectors/factorial/mockConnector.js";
+import { createPhcModule } from "../src/connectors/phc/module.js";
 import { MockPhcConnector } from "../src/connectors/phc/mockConnector.js";
 import { createHttpHub } from "../src/httpServer.js";
 
@@ -29,14 +32,14 @@ before(async () => {
           id: "cliente-so-leitura",
           label: "Cliente Só Leitura",
           apiKeyHash: hashApiKey(READ_ONLY_KEY),
-          scopes: ["clients:read"],
+          scopes: ["phc:clients:read"],
           revoked: false,
         },
         {
           id: "cliente-com-escrita",
           label: "Cliente Com Escrita",
           apiKeyHash: hashApiKey(WRITE_KEY),
-          scopes: ["clients:read", "stock:read", "orders:write"],
+          scopes: ["phc:clients:read", "phc:stock:read", "phc:orders:write", "factorial:employees:read"],
           revoked: false,
         },
       ],
@@ -44,7 +47,8 @@ before(async () => {
   );
 
   auditSink = new InMemoryAuditSink();
-  httpServer = createHttpHub({ integrationsFile, connector: new MockPhcConnector(), auditSink });
+  const modules = [createPhcModule(new MockPhcConnector()), createFactorialModule(new MockFactorialConnector())];
+  httpServer = createHttpHub({ integrationsFile, modules, auditSink });
 
   await new Promise<void>((resolvePromise) => httpServer.listen(0, "127.0.0.1", resolvePromise));
   const address = httpServer.address();
@@ -91,17 +95,17 @@ test("two concurrent sessions with different scopes are isolated from each other
   const readOnlyClient = await connectClient(READ_ONLY_KEY);
   const writeClient = await connectClient(WRITE_KEY);
 
-  const clients = await readOnlyClient.callTool({ name: "list_clients", arguments: { search: "ferragens" } });
+  const clients = await readOnlyClient.callTool({ name: "phc.list_clients", arguments: { search: "ferragens" } });
   assert.equal(clients.isError, undefined);
 
   const denied = await readOnlyClient.callTool({
-    name: "create_order",
+    name: "phc.create_order",
     arguments: { clientId: "C0001", lines: [{ itemCode: "ART001", quantity: 1 }] },
   });
   assert.equal(denied.isError, true);
 
   const created = await writeClient.callTool({
-    name: "create_order",
+    name: "phc.create_order",
     arguments: { clientId: "C0001", lines: [{ itemCode: "ART001", quantity: 2 }] },
   });
   assert.equal(created.isError, undefined);
@@ -113,14 +117,14 @@ test("two concurrent sessions with different scopes are isolated from each other
 test("the shared connector keeps state across independent sessions", async () => {
   const writeClientA = await connectClient(WRITE_KEY);
   const orderA = await writeClientA.callTool({
-    name: "create_order",
+    name: "phc.create_order",
     arguments: { clientId: "C0001", lines: [{ itemCode: "ART002", quantity: 1 }] },
   });
   await writeClientA.close();
 
   const writeClientB = await connectClient(WRITE_KEY);
   const orderB = await writeClientB.callTool({
-    name: "create_order",
+    name: "phc.create_order",
     arguments: { clientId: "C0001", lines: [{ itemCode: "ART002", quantity: 1 }] },
   });
   await writeClientB.close();
@@ -128,4 +132,20 @@ test("the shared connector keeps state across independent sessions", async () =>
   const idA = JSON.parse((orderA.content as Array<{ text: string }>)[0]!.text).id as string;
   const idB = JSON.parse((orderB.content as Array<{ text: string }>)[0]!.text).id as string;
   assert.notEqual(idA, idB, "cada sessão devia continuar a sequência de encomendas do mesmo conector partilhado");
+});
+
+test("a second, unrelated connector (Factorial) is served from the same hub with its own scope", async () => {
+  const readOnlyClient = await connectClient(READ_ONLY_KEY);
+
+  const deniedEmployees = await readOnlyClient.callTool({ name: "factorial.list_employees", arguments: {} });
+  assert.equal(deniedEmployees.isError, true, "cliente sem scope factorial:employees:read deve ser recusado");
+
+  await readOnlyClient.close();
+
+  const writeClient = await connectClient(WRITE_KEY);
+  const employees = await writeClient.callTool({ name: "factorial.list_employees", arguments: { search: "engenharia" } });
+  assert.equal(employees.isError, undefined);
+  assert.match((employees.content as Array<{ text: string }>)[0]!.text, /Ana Ferreira/);
+
+  await writeClient.close();
 });

@@ -23,7 +23,7 @@ test("resolves a valid, active credential to its identity and scopes", () => {
       id: "int-1",
       label: "Integração de Teste",
       apiKeyHash: hashApiKey("chave-correta"),
-      scopes: ["clients:read", "stock:read"],
+      scopes: ["phc:clients:read", "phc:stock:read"],
       revoked: false,
     },
   ]);
@@ -34,7 +34,7 @@ test("resolves a valid, active credential to its identity and scopes", () => {
   assert.deepEqual(identity, {
     integrationId: "int-1",
     label: "Integração de Teste",
-    scopes: ["clients:read", "stock:read"],
+    scopes: ["phc:clients:read", "phc:stock:read"],
   });
 
   rmSync(filePath);
@@ -52,7 +52,7 @@ test("rejects an unknown api key", () => {
 
 test("rejects a revoked credential even with the correct key", () => {
   const filePath = writeIntegrationsFile([
-    { id: "int-1", label: "Teste", apiKeyHash: hashApiKey("chave-correta"), scopes: ["clients:read"], revoked: true },
+    { id: "int-1", label: "Teste", apiKeyHash: hashApiKey("chave-correta"), scopes: ["phc:clients:read"], revoked: true },
   ]);
   const store = CredentialStore.fromFile(filePath);
 

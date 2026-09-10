@@ -1,18 +1,19 @@
+import { FACTORIAL_SCOPES } from "../connectors/factorial/scopes.js";
+import { PHC_SCOPES } from "../connectors/phc/scopes.js";
+
 /**
- * Âmbitos (scopes) que uma credencial de integração pode ter.
+ * Âmbitos (scopes) que uma credencial de integração pode ter, agregados a
+ * partir de todos os conectores registados no hub. Cada ferramenta MCP
+ * declara o(s) scope(s) de que precisa (sempre prefixados com o id do
+ * conector, ex: "phc:clients:read", "factorial:employees:read"); uma
+ * integração só consegue usar uma ferramenta se a credencial associada
+ * tiver esse scope atribuído.
  *
- * Cada ferramenta MCP declara o(s) scope(s) de que precisa; uma integração
- * só consegue usar uma ferramenta se a credencial associada tiver esse
- * scope atribuído. Isto espelha, a um nível simples, a lógica de perfis e
- * permissões do PHC CS — o objetivo a prazo é mapear estes scopes
- * diretamente aos perfis de utilizador já definidos no PHC.
+ * Ao adicionar um novo conector (Sage, Primavera, SAP, Odoo, ...), os seus
+ * scopes juntam-se aqui — nenhuma outra parte da camada de permissões
+ * precisa de mudar.
  */
-export const SCOPES = [
-  "clients:read",
-  "stock:read",
-  "invoices:read",
-  "orders:write",
-] as const;
+export const SCOPES = [...PHC_SCOPES, ...FACTORIAL_SCOPES] as const;
 
 export type Scope = (typeof SCOPES)[number];
 

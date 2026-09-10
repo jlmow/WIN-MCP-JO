@@ -7,7 +7,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import type { AuditSink } from "./audit/logger.js";
 import { CredentialStore, resolveIdentityOrThrow } from "./auth/credentialStore.js";
-import type { PhcConnector } from "./connectors/phc/types.js";
+import type { ConnectorModule } from "./connectors/registry.js";
 import { buildServer } from "./server.js";
 
 const moduleDir = dirname(fileURLToPath(import.meta.url));
@@ -70,7 +70,7 @@ function firstHeaderValue(value: string | string[] | undefined): string | undefi
 export interface HttpHubDeps {
   /** Ficheiro de integrações — relido a cada novo `initialize` para que uma revogação tenha efeito imediato em novas ligações. */
   integrationsFile: string;
-  connector: PhcConnector;
+  modules: ConnectorModule[];
   auditSink: AuditSink;
 }
 
@@ -82,8 +82,8 @@ export interface HttpHubDeps {
  * própria instância de `McpServer`, ligada à identidade resolvida dessa
  * key — múltiplas integrações de IA podem estar ligadas ao mesmo hub em
  * simultâneo, cada uma só a ver o que os seus scopes autorizam. Todas as
- * sessões partilham o mesmo `connector` (a mesma fonte de dados do PHC) e
- * o mesmo `auditSink`.
+ * sessões partilham os mesmos `modules` (as mesmas fontes de dados) e o
+ * mesmo `auditSink`.
  */
 export function createHttpHub(deps: HttpHubDeps): Server {
   const sessions = new Map<string, StreamableHTTPServerTransport>();
@@ -129,7 +129,7 @@ export function createHttpHub(deps: HttpHubDeps): Server {
       return;
     }
 
-    const server = buildServer(identity, deps.connector, deps.auditSink);
+    const server = buildServer(identity, deps.modules, deps.auditSink);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       // Respostas em JSON simples em vez de stream SSE: mais fácil de consumir

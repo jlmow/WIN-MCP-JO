@@ -69,7 +69,7 @@
 </head>
 <body>
   <h1>🔌 Winsig MCP Server — Consola de testes</h1>
-  <p class="subtitle">Interface mínima para testar as ferramentas MCP diretamente do browser, sem precisar de terminal nem de curl.</p>
+  <p class="subtitle">Interface mínima para testar, no mesmo hub, as ferramentas de vários sistemas ligados (PHC, Factorial, ...) — diretamente do browser, sem precisar de terminal nem de curl.</p>
 
   <fieldset>
     <legend>1. Ligação</legend>
@@ -81,18 +81,18 @@
   </fieldset>
 
   <fieldset id="tools" hidden>
-    <legend>2. Ferramentas</legend>
+    <legend>2. Ferramentas — Cegid PHC CS</legend>
 
     <div class="row">
       <div>
         <label for="clientsSearch">Listar clientes — texto de pesquisa (opcional)</label>
         <input id="clientsSearch" type="text" placeholder="ex: ferragens" />
-        <button data-tool="list_clients">Listar clientes</button>
+        <button data-tool="phc.list_clients">Listar clientes</button>
       </div>
       <div>
         <label for="clientId">Consultar cliente — código</label>
         <input id="clientId" type="text" placeholder="ex: C0001" />
-        <button data-tool="get_client">Consultar cliente</button>
+        <button data-tool="phc.get_client">Consultar cliente</button>
       </div>
     </div>
 
@@ -100,12 +100,12 @@
       <div>
         <label for="stockSearch">Listar stocks — texto de pesquisa (opcional)</label>
         <input id="stockSearch" type="text" placeholder="ex: parafuso" />
-        <button data-tool="list_stock">Listar stocks</button>
+        <button data-tool="phc.list_stock">Listar stocks</button>
       </div>
       <div>
         <label for="invoicesClientId">Listar faturas — código do cliente (opcional)</label>
         <input id="invoicesClientId" type="text" placeholder="ex: C0001" />
-        <button data-tool="list_invoices">Listar faturas</button>
+        <button data-tool="phc.list_invoices">Listar faturas</button>
       </div>
     </div>
 
@@ -121,11 +121,29 @@
         <input id="orderQuantity" type="number" min="1" value="1" />
       </div>
     </div>
-    <button data-tool="create_order">Criar encomenda</button>
+    <button data-tool="phc.create_order">Criar encomenda</button>
+  </fieldset>
+
+  <fieldset id="toolsFactorial" hidden>
+    <legend>3. Ferramentas — Factorial (RH)</legend>
+    <p class="subtitle" style="margin-top: -4px;">Segundo sistema ligado ao mesmo hub — prova de que não é só o PHC.</p>
+
+    <div class="row">
+      <div>
+        <label for="employeesSearch">Listar colaboradores — texto de pesquisa (opcional)</label>
+        <input id="employeesSearch" type="text" placeholder="ex: engenharia" />
+        <button data-tool="factorial.list_employees">Listar colaboradores</button>
+      </div>
+      <div>
+        <label for="employeeId">Consultar colaborador — código</label>
+        <input id="employeeId" type="text" placeholder="ex: E001" />
+        <button data-tool="factorial.get_employee">Consultar colaborador</button>
+      </div>
+    </div>
   </fieldset>
 
   <fieldset>
-    <legend>3. Registo de pedidos e respostas</legend>
+    <legend>4. Registo de pedidos e respostas</legend>
     <div id="log">(ainda sem pedidos)</div>
   </fieldset>
 
@@ -136,6 +154,7 @@ let nextId = 1;
 
 const statusEl = document.getElementById("status");
 const toolsEl = document.getElementById("tools");
+const toolsFactorialEl = document.getElementById("toolsFactorial");
 const logEl = document.getElementById("log");
 const connectBtn = document.getElementById("connectBtn");
 const disconnectBtn = document.getElementById("disconnectBtn");
@@ -201,10 +220,12 @@ async function connect() {
     await rpc("notifications/initialized", undefined, false);
     setStatus("ok", "Ligado. Sessão: " + sessionId);
     toolsEl.hidden = false;
+    toolsFactorialEl.hidden = false;
     disconnectBtn.disabled = false;
   } catch (error) {
     setStatus("err", "Falha ao ligar: " + error.message);
     toolsEl.hidden = true;
+    toolsFactorialEl.hidden = true;
   } finally {
     connectBtn.disabled = false;
   }
@@ -219,6 +240,7 @@ async function disconnect() {
   }
   sessionId = null;
   toolsEl.hidden = true;
+  toolsFactorialEl.hidden = true;
   disconnectBtn.disabled = true;
   setStatus("ok", "Sessão terminada.");
 }
@@ -229,18 +251,18 @@ async function callTool(name) {
     return;
   }
   let args = {};
-  if (name === "list_clients") {
+  if (name === "phc.list_clients") {
     const search = document.getElementById("clientsSearch").value.trim();
     if (search) args.search = search;
-  } else if (name === "get_client") {
+  } else if (name === "phc.get_client") {
     args.id = document.getElementById("clientId").value.trim();
-  } else if (name === "list_stock") {
+  } else if (name === "phc.list_stock") {
     const search = document.getElementById("stockSearch").value.trim();
     if (search) args.search = search;
-  } else if (name === "list_invoices") {
+  } else if (name === "phc.list_invoices") {
     const clientId = document.getElementById("invoicesClientId").value.trim();
     if (clientId) args.clientId = clientId;
-  } else if (name === "create_order") {
+  } else if (name === "phc.create_order") {
     args.clientId = document.getElementById("orderClientId").value.trim();
     args.lines = [
       {
@@ -248,6 +270,11 @@ async function callTool(name) {
         quantity: Number(document.getElementById("orderQuantity").value) || 1,
       },
     ];
+  } else if (name === "factorial.list_employees") {
+    const search = document.getElementById("employeesSearch").value.trim();
+    if (search) args.search = search;
+  } else if (name === "factorial.get_employee") {
+    args.id = document.getElementById("employeeId").value.trim();
   }
 
   try {

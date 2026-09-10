@@ -1,8 +1,8 @@
 # Winsig MCP Server
 
-Servidor [MCP](https://modelcontextprotocol.io) que liga modelos de IA (Claude, ChatGPT, Gemini ou qualquer cliente compatível com o protocolo) ao **Cegid PHC CS** e, no futuro, a outras soluções do ecossistema **Winsig** — com autenticação por integração, permissões granulares e auditoria de cada pedido.
+Hub [MCP](https://modelcontextprotocol.io) multi-sistema que liga modelos de IA (Claude, ChatGPT, Gemini ou qualquer cliente compatível com o protocolo) a vários sistemas de gestão — hoje o **Cegid PHC CS** e o **Factorial** (RH), amanhã Sage, Primavera, SAP, Odoo ou outra solução Winsig — com autenticação por integração, permissões granulares e auditoria de cada pedido, num único ponto de entrada.
 
-Inspirado no posicionamento do [TOTAL MCP Server da Totalsoft](https://totalsoft.pt/total-mcp-server.html): a IA nunca acede diretamente à base de dados do ERP, só através deste hub.
+Inspirado no posicionamento do [TOTAL MCP Server da Totalsoft](https://totalsoft.pt/total-mcp-server.html) — a IA nunca acede diretamente à base de dados do ERP, só através deste hub — mas desenhado desde a base para **não ficar preso a um único fornecedor**: um hub, muitos sistemas ligados, um só modelo de segurança. É essa a principal diferenciação que estamos a construir.
 
 > **Onde é que isto está "alojado"?** Em lado nenhum, por agora. Isto é código-fonte neste repositório (branch `claude/total-mcp-server-improved-j4auhb`) — não há nenhum servidor público a correr. Para o testares, corres o hub na tua própria máquina (ou num servidor que controles) seguindo as instruções abaixo. Isso é também intencional: um dos pontos de venda deste tipo de produto é que corre dentro da infraestrutura da empresa, nunca num serviço externo.
 
@@ -46,7 +46,7 @@ Abre o browser em **http://localhost:3000**. No campo "API key da integração" 
 chave-demo-teste
 ```
 
-Clica **Ligar** e depois experimenta os botões: "Listar clientes" (pesquisa por `ferragens`, por exemplo), "Consultar cliente" (código `C0001`), "Criar encomenda" (cliente `C0001`, artigo `ART001`, quantidade `2`). Cada pedido e resposta aparece no painel preto em baixo.
+Clica **Ligar** e depois experimenta os botões: "Listar clientes" (pesquisa por `ferragens`, por exemplo), "Consultar cliente" (código `C0001`), "Criar encomenda" (cliente `C0001`, artigo `ART001`, quantidade `2`) — e também a secção **Factorial (RH)**, um segundo sistema ligado ao mesmo hub, com "Listar colaboradores" (pesquisa por `engenharia`, por exemplo). Cada pedido e resposta aparece no painel preto em baixo.
 
 > ⚠️ A chave `chave-demo-teste` e o ficheiro `integrations.demo.json` são só para este teste local — nunca usar em produção. Para criar as tuas próprias integrações/chaves, ver a secção "Como correr localmente" abaixo.
 
@@ -54,7 +54,7 @@ Para parar o servidor, volta ao terminal onde ele ficou a correr e carrega `Ctrl
 
 ## Porquê esta arquitetura
 
-> **Nota importante:** ainda não há acesso à API do PHC Web / PHC CS neste projeto. Por isso, todo o acesso a dados passa por uma interface abstrata (`PhcConnector`) com uma implementação **mock** (`MockPhcConnector`) que devolve dados fictícios realistas. Isto permite construir e testar o hub completo — auth, permissões, auditoria, ferramentas MCP — já, e trocar apenas essa peça quando a API real estiver disponível.
+> **Nota importante:** ainda não há acesso à API do PHC Web / PHC CS (nem à API do Factorial) neste projeto. Por isso, todo o acesso a dados passa por interfaces abstratas (`PhcConnector`, `FactorialConnector`) com implementações **mock** que devolvem dados fictícios realistas. Isto permite construir e testar o hub completo — auth, permissões, auditoria, ferramentas MCP, múltiplos conectores — já, e trocar cada mock pela integração real à medida que o acesso a cada sistema for ficando disponível, sem tocar nas outras camadas.
 
 ```
 Modelo de IA A ──┐                          Modelo de IA B ──┐
@@ -67,38 +67,56 @@ Modelo de IA A ──┐                          Modelo de IA B ──┐
                      │                            │
                      ▼                            ▼
               1. Auth        → CredentialStore (por sessão/processo)
-              2. Permissões  → requireScope()
-              3. Ferramentas → src/tools/*
-              4. Auditoria   → AuditSink (partilhado)
-              5. Conector    → PhcConnector (partilhado)
+              2. Permissões  → requireScope() — scopes prefixados por sistema
+              3. Ferramentas → um ConnectorModule por sistema ligado
+                     ├── phc.*        (5 ferramentas, scope "phc:...")
+                     └── factorial.*  (2 ferramentas, scope "factorial:...")
+              4. Auditoria   → AuditSink (partilhado, todos os sistemas)
                      │
-                     ▼ (mock por agora)
-            Cegid PHC CS / API PHC Web
+        ┌────────────┴────────────┐
+        ▼                         ▼
+  PhcConnector              FactorialConnector
+  (mock por agora)          (mock por agora)
+        │                         │
+        ▼                         ▼
+  Cegid PHC CS /             Factorial
+  API PHC Web                (API real)
 ```
 
-Nenhuma ferramenta MCP fala diretamente com o PHC: passa sempre por `requireScope` (permissões) e é sempre registada no `AuditSink` (auditoria), com sucesso ou falha. No transporte HTTP, cada sessão autentica-se com a sua própria API key e fica isolada das restantes — mas todas partilham o mesmo `connector` (a mesma fonte de dados) e o mesmo `auditSink` (o mesmo registo de auditoria), tal como um hub multi-integração real.
+Nenhuma ferramenta MCP fala diretamente com um sistema de gestão: passa sempre por `requireScope` (permissões) e é sempre registada no `AuditSink` (auditoria), com sucesso ou falha. No transporte HTTP, cada sessão autentica-se com a sua própria API key e fica isolada das restantes — mas todas partilham os mesmos conectores (as mesmas fontes de dados) e o mesmo `auditSink` (o mesmo registo de auditoria), tal como um hub multi-integração real.
+
+O hub em si (`server.ts`) **não sabe nada sobre PHC ou Factorial especificamente** — só sabe iterar uma lista de `ConnectorModule`. Ver a secção "Arquitetura multi-conector" abaixo para o que isso significa na prática ao adicionar Sage, Primavera, SAP ou Odoo.
 
 ## Estrutura do projeto
 
 ```
 src/
-  auth/            Credenciais por integração (API key → identidade + scopes)
-  permissions/      Scopes disponíveis e verificação de acesso
-  audit/            Registo append-only de cada pedido
-  connectors/phc/   Interface PhcConnector + MockPhcConnector (dados fictícios)
-  tools/            Ferramentas MCP expostas (list_clients, get_client, list_stock,
-                     list_invoices, create_order)
-  server.ts         Monta o McpServer (identidade + connector + auditSink → ferramentas)
-  index.ts          Ponto de entrada — transporte stdio (1 processo = 1 integração)
-  httpServer.ts     Hub HTTP multi-tenant (Streamable HTTP) — várias integrações
-                     em simultâneo, cada uma com a sua sessão e a sua API key
-  httpIndex.ts      Ponto de entrada — transporte HTTP
+  auth/              Credenciais por integração (API key → identidade + scopes)
+  permissions/       Scopes agregados de todos os conectores + verificação de acesso
+  audit/             Registo append-only de cada pedido
+  tools/helpers.ts   runTool/textResult/errorResult — genéricos, usados por qualquer conector
+  connectors/
+    registry.ts      ConnectorModule — o "plugue" que qualquer sistema tem de implementar
+    phc/             Conector Cegid PHC CS
+      types.ts         Tipos de domínio + interface PhcConnector
+      mockConnector.ts MockPhcConnector (dados fictícios)
+      scopes.ts        PHC_SCOPES ("phc:clients:read", "phc:orders:write", ...)
+      tools/           Ferramentas MCP (phc.list_clients, phc.create_order, ...)
+      module.ts        Junta tudo num ConnectorModule
+    factorial/       Conector Factorial (RH) — mesmo padrão do PHC, prova o conceito
+      types.ts, mockConnector.ts, scopes.ts, tools/, module.ts
+  modules.ts         Lista de conectores ligados a este hub (hoje: PHC + Factorial)
+  server.ts          Monta o McpServer (identidade + lista de módulos + auditSink)
+  index.ts           Ponto de entrada — transporte stdio (1 processo = 1 integração)
+  httpServer.ts      Hub HTTP multi-tenant (Streamable HTTP) — várias integrações
+                      em simultâneo, cada uma com a sua sessão e a sua API key
+  httpIndex.ts       Ponto de entrada — transporte HTTP
 public/
-  console.html      Consola de testes servida em GET / pelo hub HTTP
+  console.html       Consola de testes servida em GET / pelo hub HTTP
 config/
   integrations.example.json   Modelo de configuração (a preencher com as tuas chaves)
   integrations.demo.json      Configuração de demonstração para o "Teste rápido"
-test/               Testes unitários e de integração (node:test, via tsx)
+test/                Testes unitários e de integração (node:test, via tsx)
 ```
 
 ## Como correr localmente
@@ -189,7 +207,7 @@ curl -X POST http://127.0.0.1:3000/mcp \
   -H "Authorization: Bearer uma-api-key-secreta-para-esta-integracao" \
   -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
   -H "mcp-session-id: <uuid-do-passo-2>" \
-  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_clients","arguments":{"search":"ferragens"}}}'
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"phc.list_clients","arguments":{"search":"ferragens"}}}'
 ```
 
 Abre um segundo terminal e repete os passos 2-5 com uma **API key diferente** (com scopes diferentes) para veres duas sessões em simultâneo, isoladas uma da outra — é exatamente isto que o teste automático `test/httpServer.test.ts` verifica.
@@ -202,35 +220,60 @@ Isto foi validado de ponta a ponta neste ambiente (sessão, `notifications/initi
 npm test
 ```
 
-Cobre: resolução e revogação de credenciais, verificação de permissões, o `MockPhcConnector`, o registo de auditoria (sucesso e falha), o fluxo completo de uma ferramenta (`runTool`) — incluindo o caso de pedido negado por falta de scope — e o hub HTTP de ponta a ponta: autenticação por sessão, duas sessões concorrentes com scopes diferentes isoladas uma da outra, e o `connector` partilhado a manter estado entre sessões independentes.
+Cobre: resolução e revogação de credenciais, verificação de permissões (incluindo scopes de conectores diferentes), o `MockPhcConnector`, o registo de auditoria (sucesso e falha), o fluxo completo de uma ferramenta (`runTool`) — incluindo o caso de pedido negado por falta de scope — e o hub HTTP de ponta a ponta: autenticação por sessão, duas sessões concorrentes com scopes diferentes isoladas uma da outra, os conectores partilhados a manter estado entre sessões independentes, e um segundo conector (Factorial) a funcionar lado a lado com o PHC no mesmo hub.
 
 ## Scopes disponíveis
 
-Definidos em `src/permissions/scopes.ts`:
+Agregados em `src/permissions/scopes.ts` a partir de cada conector — sempre prefixados com o id do sistema, para nunca colidirem entre si:
 
-- `clients:read` — consultar clientes
-- `stock:read` — consultar stocks/artigos
-- `invoices:read` — consultar faturas
-- `orders:write` — criar encomendas
+**Cegid PHC CS** (`src/connectors/phc/scopes.ts`)
+- `phc:clients:read` — consultar clientes
+- `phc:stock:read` — consultar stocks/artigos
+- `phc:invoices:read` — consultar faturas
+- `phc:orders:write` — criar encomendas
 
-Cada integração (cada API key) só usa as ferramentas cujo scope tenha atribuído em `config/integrations.json`. Um pedido sem o scope necessário é recusado **e continua a ficar registado na auditoria**, com o motivo da recusa.
+**Factorial** (`src/connectors/factorial/scopes.ts`)
+- `factorial:employees:read` — consultar colaboradores
+
+Cada integração (cada API key) só usa as ferramentas cujo scope tenha atribuído em `config/integrations.json` — de um ou de vários sistemas ao mesmo tempo, se fizer sentido (ex: uma integração com `phc:clients:read` + `factorial:employees:read`). Um pedido sem o scope necessário é recusado **e continua a ficar registado na auditoria**, com o motivo da recusa.
 
 ## Ferramentas MCP disponíveis
 
 | Ferramenta | Scope | Descrição |
 |---|---|---|
-| `list_clients` | `clients:read` | Lista clientes, com filtro por nome/NIF/código |
-| `get_client` | `clients:read` | Ficha de um cliente por código |
-| `list_stock` | `stock:read` | Lista artigos e quantidades disponíveis |
-| `list_invoices` | `invoices:read` | Lista faturas, com filtro por cliente |
-| `create_order` | `orders:write` | Cria uma encomenda de cliente (valida cliente e artigos) |
+| `phc.list_clients` | `phc:clients:read` | Lista clientes, com filtro por nome/NIF/código |
+| `phc.get_client` | `phc:clients:read` | Ficha de um cliente por código |
+| `phc.list_stock` | `phc:stock:read` | Lista artigos e quantidades disponíveis |
+| `phc.list_invoices` | `phc:invoices:read` | Lista faturas, com filtro por cliente |
+| `phc.create_order` | `phc:orders:write` | Cria uma encomenda de cliente (valida cliente e artigos) |
+| `factorial.list_employees` | `factorial:employees:read` | Lista colaboradores, com filtro por nome/departamento/email |
+| `factorial.get_employee` | `factorial:employees:read` | Ficha de um colaborador por código |
+
+## Arquitetura multi-conector — como adicionar um novo sistema
+
+Isto é o que diferencia este hub de um MCP-por-ERP: **o servidor não sabe nada sobre nenhum sistema em concreto.** `server.ts` só percorre uma lista de `ConnectorModule` (`src/connectors/registry.ts`) e pede a cada um para registar as suas ferramentas. O PHC e o Factorial são dois exemplos desse padrão — não casos especiais.
+
+Para ligar um sistema novo (Sage, Primavera, SAP, Odoo, ou outro), a receita é sempre a mesma — usar `src/connectors/factorial/` como modelo, por ser o mais pequeno:
+
+1. **`types.ts`** — tipos de domínio (ex: `Product`, `Order`) + uma interface abstrata (ex: `SageConnector`) com os métodos que queres expor.
+2. **`mockConnector.ts`** — uma implementação com dados fictícios, para desenvolver e testar sem acesso à API real do sistema. Mais tarde, um `SageApiConnector` que implemente a mesma interface substitui-o sem tocar em mais nada.
+3. **`scopes.ts`** — os scopes deste sistema, sempre prefixados com o seu id (ex: `sage:invoices:read`).
+4. **`tools/*.ts`** — uma ferramenta MCP por operação, cada uma a chamar `runTool(...)` de `src/tools/helpers.ts` (o mesmo helper genérico que o PHC e o Factorial já usam — verifica o scope e regista na auditoria automaticamente).
+5. **`module.ts`** — junta tudo num `ConnectorModule { id, label, registerTools }`.
+6. Acrescentar o novo módulo à lista em **`src/modules.ts`**.
+7. Juntar os novos scopes aos existentes em **`src/permissions/scopes.ts`** (uma linha).
+
+Nenhum destes passos mexe em auth, permissões, auditoria, nos transportes (stdio/HTTP) ou na consola de testes — todos continuam genéricos e já funcionam com qualquer número de conectores.
 
 ## Roteiro / próximos passos
 
-1. **Conector real do PHC Web** — implementar `PhcWebApiConnector` (mesma interface `PhcConnector`) assim que houver acesso à API/documentação do PHC Web / PHC CS. Nenhuma outra camada muda.
+1. **Conectores reais** — implementar `PhcWebApiConnector` e `FactorialApiConnector` (mesmas interfaces `PhcConnector`/`FactorialConnector`) assim que houver acesso às respetivas APIs. Nenhuma outra camada muda.
 2. ~~Transporte HTTP multi-tenant~~ — feito: `src/httpServer.ts` (Streamable HTTP), uma sessão por ligação, identidade resolvida por `Authorization: Bearer` no `initialize`.
-3. **Deploy real** — hoje só corre localmente (`npm run dev:http`). Falta empacotar (Docker), colocar atrás de TLS/reverse proxy, e decidir onde corre dentro da infraestrutura Winsig/cliente.
-4. **Mapeamento aos perfis reais do PHC** — hoje os scopes são definidos manualmente; o objetivo é herdar diretamente os perfis e permissões já configurados no PHC CS.
-5. **Outros conectores Winsig** — o padrão `Connector` + ferramentas + scopes é reutilizável: outras soluções Winsig podem expor o seu próprio conector e o seu próprio conjunto de ferramentas/scopes, plugados no mesmo hub.
-6. **Armazenamento de credenciais e auditoria em base de dados própria** — trocar o ficheiro JSON e o log local por uma base de dados dedicada ao hub, com consola de administração para emitir/revogar credenciais e consultar auditoria.
-7. **Expiração/renovação de sessões HTTP** — hoje as sessões ficam em memória sem limite de tempo; adicionar um timeout de inatividade.
+3. ~~Arquitetura multi-conector~~ — feito: `ConnectorModule` (`src/connectors/registry.ts`), PHC e Factorial como dois conectores independentes no mesmo hub, com scopes e ferramentas prefixados.
+4. **Mais conectores** — Sage, Primavera, SAP, Odoo, seguindo a receita acima. Cada um é trabalho isolado; não há dependências entre conectores.
+5. **Deploy real** — hoje só corre localmente (`npm run dev:http`). Falta empacotar (Docker), colocar atrás de TLS/reverse proxy, e decidir onde corre dentro da infraestrutura Winsig/cliente.
+6. **Mapeamento aos perfis reais de cada sistema** — hoje os scopes são definidos manualmente; o objetivo é herdar diretamente os perfis e permissões já configurados em cada ERP/plataforma.
+7. **Ferramentas que atravessam conectores** — ex: "cria a despesa no Factorial e concilia com a fatura no PHC"; só é possível porque ambos já correm no mesmo hub, com a mesma auditoria.
+8. **Aprovação humana para escritas sensíveis** — um nível extra de confiança que os concorrentes de ERP único não oferecem: ex. encomendas acima de X€ ficam pendentes até confirmação humana.
+9. **Armazenamento de credenciais e auditoria em base de dados própria** — trocar o ficheiro JSON e o log local por uma base de dados dedicada ao hub, com consola de administração para emitir/revogar credenciais e consultar auditoria.
+10. **Expiração/renovação de sessões HTTP** — hoje as sessões ficam em memória sem limite de tempo; adicionar um timeout de inatividade.
