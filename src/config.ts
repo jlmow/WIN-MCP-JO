@@ -11,18 +11,25 @@ function requireEnv(name: string): string {
 }
 
 export interface AppConfig {
-  /** API key em texto plano desta ligação — identifica a integração de IA que está a correr este processo. */
-  apiKey: string;
   /** Caminho para o ficheiro com as credenciais das integrações registadas. */
   integrationsFile: string;
   /** Caminho para o ficheiro de log de auditoria (append-only). */
   auditLogFile: string;
 }
 
+/** Configuração partilhada por ambos os transportes (stdio e HTTP). */
 export function loadConfig(): AppConfig {
   return {
-    apiKey: requireEnv("WINSIG_MCP_API_KEY"),
     integrationsFile: resolve(process.env.WINSIG_MCP_INTEGRATIONS_FILE ?? "config/integrations.json"),
     auditLogFile: resolve(process.env.WINSIG_MCP_AUDIT_LOG_FILE ?? "logs/audit.log"),
   };
+}
+
+/**
+ * No transporte stdio existe uma única identidade por processo, fixada no
+ * arranque via variável de ambiente (é assim que clientes como o Claude
+ * Desktop lançam servidores MCP locais, um processo por integração).
+ */
+export function requireApiKeyFromEnv(): string {
+  return requireEnv("WINSIG_MCP_API_KEY");
 }

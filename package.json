@@ -11,6 +11,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
+    "dev:http": "tsx src/httpIndex.ts",
+    "start:http": "node dist/httpIndex.js",
     "hash-key": "tsx src/auth/hashKeyCli.ts",
     "test": "tsx --test test/**/*.test.ts",
     "lint": "tsc --noEmit"

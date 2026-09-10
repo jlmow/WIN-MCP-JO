@@ -67,3 +67,16 @@ export class CredentialStore {
     return null;
   }
 }
+
+export class InvalidApiKeyError extends Error {
+  constructor() {
+    super("API key inválida, desconhecida ou revogada.");
+    this.name = "InvalidApiKeyError";
+  }
+}
+
+export function resolveIdentityOrThrow(store: CredentialStore, rawApiKey: string): Identity {
+  const identity = store.resolve(rawApiKey);
+  if (!identity) throw new InvalidApiKeyError();
+  return identity;
+}
