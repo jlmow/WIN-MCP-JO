@@ -6,6 +6,52 @@ Inspirado no posicionamento do [TOTAL MCP Server da Totalsoft](https://totalsoft
 
 > **Onde é que isto está "alojado"?** Em lado nenhum, por agora. Isto é código-fonte neste repositório (branch `claude/total-mcp-server-improved-j4auhb`) — não há nenhum servidor público a correr. Para o testares, corres o hub na tua própria máquina (ou num servidor que controles) seguindo as instruções abaixo. Isso é também intencional: um dos pontos de venda deste tipo de produto é que corre dentro da infraestrutura da empresa, nunca num serviço externo.
 
+## Teste rápido (± 5 minutos, sem experiência de programação)
+
+Isto arranca o servidor e abre uma página no browser com botões para cada ferramenta — não precisas de saber usar `curl` nem `git`.
+
+**Passo 1 — Instalar o Node.js** (só uma vez, se ainda não tiveres)
+Vai a [nodejs.org](https://nodejs.org), descarrega a versão **LTS** para o teu sistema e instala-a como qualquer outro programa (Seguinte → Seguinte → Concluir).
+
+**Passo 2 — Descarregar o código deste projeto**
+No GitHub, abre este repositório, muda para o branch `claude/total-mcp-server-improved-j4auhb` (menu à esquerda onde diz "main"), clica no botão verde **Code** e escolhe **Download ZIP**. Descompacta o ficheiro `.zip` — vais ter uma pasta chamada algo como `WIN-MCP-JO-claude-total-mcp-server-improved-j4auhb`.
+
+**Passo 3 — Abrir um terminal nessa pasta**
+- **Windows:** abre a pasta no Explorador de Ficheiros, clica na barra de endereço no topo, escreve `cmd` e carrega Enter.
+- **Mac:** abre o Terminal (Spotlight: `Cmd+Espaço`, escreve "Terminal", Enter), escreve `cd ` (com um espaço a seguir) e depois arrasta a pasta do projeto para dentro da janela do Terminal — o caminho preenche-se sozinho — e carrega Enter.
+
+**Passo 4 — Correr estes comandos, um de cada vez** (copia e cola, Enter a seguir a cada um)
+
+```bash
+npm install
+```
+Copia o ficheiro de configuração de demonstração (já vem com uma chave de teste pronta a usar):
+```bash
+# Mac/Linux:
+cp config/integrations.demo.json config/integrations.json
+# Windows (cmd):
+copy config\integrations.demo.json config\integrations.json
+```
+Depois:
+```bash
+npm run build
+npm run dev:http
+```
+Vais ver algo como `Hub HTTP a correr em http://127.0.0.1:3000/mcp`. **Deixa este terminal aberto** — é o servidor a correr.
+
+**Passo 5 — Abrir a consola de testes**
+Abre o browser em **http://localhost:3000**. No campo "API key da integração" escreve:
+
+```
+chave-demo-teste
+```
+
+Clica **Ligar** e depois experimenta os botões: "Listar clientes" (pesquisa por `ferragens`, por exemplo), "Consultar cliente" (código `C0001`), "Criar encomenda" (cliente `C0001`, artigo `ART001`, quantidade `2`). Cada pedido e resposta aparece no painel preto em baixo.
+
+> ⚠️ A chave `chave-demo-teste` e o ficheiro `integrations.demo.json` são só para este teste local — nunca usar em produção. Para criar as tuas próprias integrações/chaves, ver a secção "Como correr localmente" abaixo.
+
+Para parar o servidor, volta ao terminal onde ele ficou a correr e carrega `Ctrl+C`.
+
 ## Porquê esta arquitetura
 
 > **Nota importante:** ainda não há acesso à API do PHC Web / PHC CS neste projeto. Por isso, todo o acesso a dados passa por uma interface abstrata (`PhcConnector`) com uma implementação **mock** (`MockPhcConnector`) que devolve dados fictícios realistas. Isto permite construir e testar o hub completo — auth, permissões, auditoria, ferramentas MCP — já, e trocar apenas essa peça quando a API real estiver disponível.
@@ -47,8 +93,11 @@ src/
   httpServer.ts     Hub HTTP multi-tenant (Streamable HTTP) — várias integrações
                      em simultâneo, cada uma com a sua sessão e a sua API key
   httpIndex.ts      Ponto de entrada — transporte HTTP
+public/
+  console.html      Consola de testes servida em GET / pelo hub HTTP
 config/
-  integrations.example.json   Modelo de configuração de integrações
+  integrations.example.json   Modelo de configuração (a preencher com as tuas chaves)
+  integrations.demo.json      Configuração de demonstração para o "Teste rápido"
 test/               Testes unitários e de integração (node:test, via tsx)
 ```
 
@@ -88,7 +137,11 @@ npm run dev:http
 # [winsig-mcp-server] Hub HTTP a correr em http://127.0.0.1:3000/mcp
 ```
 
-Cada cliente autentica-se com `Authorization: Bearer <api-key>` no pedido `initialize`; a partir daí usa o `mcp-session-id` que o servidor devolve. Ver a secção **"Como testar o hub HTTP"** abaixo para um passo-a-passo completo com `curl`, e o `Inspector` também suporta este modo (escolhe "Streamable HTTP" e cola o URL + o header de autenticação).
+Cada cliente autentica-se com `Authorization: Bearer <api-key>` no pedido `initialize`; a partir daí usa o `mcp-session-id` que o servidor devolve. Três formas de testar:
+
+- **Consola no browser** (a mais simples): abre `http://127.0.0.1:3000` — é a página usada no "Teste rápido" acima.
+- **`curl`**: ver a secção "Como testar o hub HTTP com curl" abaixo.
+- **MCP Inspector**: `npx @modelcontextprotocol/inspector`, escolhe "Streamable HTTP", cola o URL (`http://127.0.0.1:3000/mcp`) e o header `Authorization: Bearer <api-key>`.
 
 ### Variáveis de ambiente
 

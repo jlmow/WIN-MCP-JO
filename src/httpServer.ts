@@ -1,11 +1,23 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import type { AuditSink } from "./audit/logger.js";
 import { CredentialStore, resolveIdentityOrThrow } from "./auth/credentialStore.js";
 import type { PhcConnector } from "./connectors/phc/types.js";
 import { buildServer } from "./server.js";
+
+const moduleDir = dirname(fileURLToPath(import.meta.url));
+// Este módulo corre em src/ (dev, via tsx) ou em dist/ (build) — em ambos os
+// casos public/ fica um nível acima, na raiz do projeto.
+const CONSOLE_HTML_PATH = join(moduleDir, "..", "public", "console.html");
+
+function loadConsoleHtml(): string {
+  return readFileSync(CONSOLE_HTML_PATH, "utf8");
+}
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 
@@ -75,6 +87,7 @@ export interface HttpHubDeps {
  */
 export function createHttpHub(deps: HttpHubDeps): Server {
   const sessions = new Map<string, StreamableHTTPServerTransport>();
+  const consoleHtml = loadConsoleHtml();
 
   async function handleMcpRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const sessionId = firstHeaderValue(req.headers["mcp-session-id"]);
@@ -119,6 +132,9 @@ export function createHttpHub(deps: HttpHubDeps): Server {
     const server = buildServer(identity, deps.connector, deps.auditSink);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
+      // Respostas em JSON simples em vez de stream SSE: mais fácil de consumir
+      // a partir de um cliente HTTP simples (curl, fetch() no browser, etc.).
+      enableJsonResponse: true,
       onsessioninitialized: (sid) => {
         sessions.set(sid, transport);
       },
@@ -145,6 +161,18 @@ export function createHttpHub(deps: HttpHubDeps): Server {
 
         if (pathname === "/healthz") {
           sendJson(res, 200, { status: "ok", activeSessions: sessions.size });
+          return;
+        }
+
+        if (pathname === "/favicon.ico") {
+          res.writeHead(204);
+          res.end();
+          return;
+        }
+
+        if ((pathname === "/" || pathname === "/console") && req.method === "GET") {
+          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+          res.end(consoleHtml);
           return;
         }
 

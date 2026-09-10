@@ -1,0 +1,13 @@
+{
+  "_comentario": "Ficheiro de demonstração para o primeiro teste local — NUNCA usar isto em produção. A API key em texto plano é 'chave-demo-teste' (documentada de propósito, só serve para testar no teu próprio computador).",
+  "integrations": [
+    {
+      "id": "demo-local",
+      "label": "Demonstração local",
+      "apiKeyHash": "1d994a73c4824512364193638ce53060dafc18207f76ecd8729e92848a7e1754",
+      "scopes": ["clients:read", "stock:read", "invoices:read", "orders:write"],
+      "revoked": false,
+      "createdAt": "2026-01-01T00:00:00.000Z"
+    }
+  ]
+}
