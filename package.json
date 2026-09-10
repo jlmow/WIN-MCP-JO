@@ -1,0 +1,30 @@
+{
+  "name": "winsig-mcp-server",
+  "version": "0.1.0",
+  "description": "Servidor MCP que liga modelos de IA compatíveis com o Model Context Protocol ao ERP Cegid PHC CS e a outras soluções Winsig, com autenticação, permissões granulares e auditoria.",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "winsig-mcp-server": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "hash-key": "tsx src/auth/hashKeyCli.ts",
+    "test": "tsx --test test/**/*.test.ts",
+    "lint": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

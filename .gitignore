@@ -1,0 +1,6 @@
+node_modules/
+dist/
+logs/
+config/integrations.json
+*.log
+.env

@@ -1,0 +1,28 @@
+{
+  "integrations": [
+    {
+      "id": "claude-desktop-compras",
+      "label": "Claude Desktop - Equipa de Compras",
+      "apiKeyHash": "SUBSTITUIR_PELO_HASH_GERADO_COM_npm_run_hash-key",
+      "scopes": ["clients:read", "stock:read"],
+      "revoked": false,
+      "createdAt": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "agente-financeiro-gpt",
+      "label": "Agente Financeiro (ChatGPT)",
+      "apiKeyHash": "SUBSTITUIR_PELO_HASH_GERADO_COM_npm_run_hash-key",
+      "scopes": ["clients:read", "invoices:read"],
+      "revoked": false,
+      "createdAt": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "assistente-encomendas",
+      "label": "Assistente de Encomendas (Claude)",
+      "apiKeyHash": "SUBSTITUIR_PELO_HASH_GERADO_COM_npm_run_hash-key",
+      "scopes": ["clients:read", "stock:read", "orders:write"],
+      "revoked": false,
+      "createdAt": "2026-01-01T00:00:00.000Z"
+    }
+  ]
+}
