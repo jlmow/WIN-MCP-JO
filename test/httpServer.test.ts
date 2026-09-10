@@ -15,6 +15,8 @@ import { createHttpHub } from "../src/httpServer.js";
 
 const READ_ONLY_KEY = "chave-so-leitura";
 const WRITE_KEY = "chave-com-escrita";
+const COLABORADOR_ANA_KEY = "chave-colaborador-ana";
+const COLABORADOR_BRUNO_KEY = "chave-colaborador-bruno";
 
 let baseUrl: string;
 let auditSink: InMemoryAuditSink;
@@ -40,6 +42,22 @@ before(async () => {
           label: "Cliente Com Escrita",
           apiKeyHash: hashApiKey(WRITE_KEY),
           scopes: ["phc:clients:read", "phc:stock:read", "phc:orders:write", "factorial:employees:read"],
+          revoked: false,
+        },
+        {
+          id: "colaborador-ana",
+          label: "Ana Ferreira (colaboradora)",
+          apiKeyHash: hashApiKey(COLABORADOR_ANA_KEY),
+          role: "colaborador",
+          attributes: { factorialEmployeeId: "E001" },
+          revoked: false,
+        },
+        {
+          id: "colaborador-bruno",
+          label: "Bruno Costa (colaborador)",
+          apiKeyHash: hashApiKey(COLABORADOR_BRUNO_KEY),
+          role: "colaborador",
+          attributes: { factorialEmployeeId: "E002" },
           revoked: false,
         },
       ],
@@ -148,4 +166,36 @@ test("a second, unrelated connector (Factorial) is served from the same hub with
   assert.match((employees.content as Array<{ text: string }>)[0]!.text, /Ana Ferreira/);
 
   await writeClient.close();
+});
+
+test("a 'colaborador' identity can read its own HR record via the restricted scope", async () => {
+  const ana = await connectClient(COLABORADOR_ANA_KEY);
+
+  const ownRecord = await ana.callTool({ name: "factorial.get_employee", arguments: { id: "E001" } });
+  assert.equal(ownRecord.isError, undefined);
+  assert.match((ownRecord.content as Array<{ text: string }>)[0]!.text, /Ana Ferreira/);
+
+  await ana.close();
+});
+
+test("a 'colaborador' identity is denied a colleague's HR record, even though the scope check passes", async () => {
+  const ana = await connectClient(COLABORADOR_ANA_KEY);
+
+  const colleagueRecord = await ana.callTool({ name: "factorial.get_employee", arguments: { id: "E002" } });
+  assert.equal(colleagueRecord.isError, true, "Ana não pode consultar o registo do Bruno (E002)");
+  assert.match((colleagueRecord.content as Array<{ text: string }>)[0]!.text, /só podes consultar o teu próprio registo/);
+
+  await ana.close();
+});
+
+test("a 'colaborador' identity listing employees only ever sees its own record, never the colleague's", async () => {
+  const bruno = await connectClient(COLABORADOR_BRUNO_KEY);
+
+  const list = await bruno.callTool({ name: "factorial.list_employees", arguments: {} });
+  const text = (list.content as Array<{ text: string }>)[0]!.text;
+  assert.match(text, /Bruno Costa/);
+  assert.doesNotMatch(text, /Ana Ferreira/);
+  assert.doesNotMatch(text, /Carla Nunes/);
+
+  await bruno.close();
 });

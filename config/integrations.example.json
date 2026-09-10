@@ -1,34 +1,53 @@
 {
+  "_comentario": "Ver src/permissions/roles.ts para os perfis disponíveis (consultor, vendas, rh-admin, colaborador). Uma integração pode usar 'role', 'scopes' explícitos, ou ambos (juntam-se sem duplicar).",
   "integrations": [
     {
-      "id": "claude-desktop-compras",
-      "label": "Claude Desktop - Equipa de Compras",
+      "id": "consultor-joao",
+      "label": "João Silva (Consultor)",
       "apiKeyHash": "SUBSTITUIR_PELO_HASH_GERADO_COM_npm_run_hash-key",
-      "scopes": ["phc:clients:read", "phc:stock:read"],
+      "role": "consultor",
       "revoked": false,
       "createdAt": "2026-01-01T00:00:00.000Z"
     },
     {
-      "id": "agente-financeiro-gpt",
-      "label": "Agente Financeiro (ChatGPT)",
+      "id": "vendas-maria",
+      "label": "Maria Santos (Equipa de Vendas)",
       "apiKeyHash": "SUBSTITUIR_PELO_HASH_GERADO_COM_npm_run_hash-key",
-      "scopes": ["phc:clients:read", "phc:invoices:read"],
+      "role": "vendas",
       "revoked": false,
       "createdAt": "2026-01-01T00:00:00.000Z"
     },
     {
-      "id": "assistente-encomendas",
-      "label": "Assistente de Encomendas (Claude)",
+      "id": "rh-admin-carla",
+      "label": "Carla Nunes (Administradora de RH)",
+      "apiKeyHash": "SUBSTITUIR_PELO_HASH_GERADO_COM_npm_run_hash-key",
+      "role": "rh-admin",
+      "revoked": false,
+      "createdAt": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "colaborador-ana",
+      "label": "Ana Ferreira (Colaboradora)",
+      "apiKeyHash": "SUBSTITUIR_PELO_HASH_GERADO_COM_npm_run_hash-key",
+      "role": "colaborador",
+      "attributes": { "factorialEmployeeId": "E001" },
+      "revoked": false,
+      "createdAt": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "colaborador-bruno",
+      "label": "Bruno Costa (Colaborador)",
+      "apiKeyHash": "SUBSTITUIR_PELO_HASH_GERADO_COM_npm_run_hash-key",
+      "role": "colaborador",
+      "attributes": { "factorialEmployeeId": "E002" },
+      "revoked": false,
+      "createdAt": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "assistente-encomendas-widget",
+      "label": "Assistente de Encomendas (integração sem perfil, só scopes explícitos)",
       "apiKeyHash": "SUBSTITUIR_PELO_HASH_GERADO_COM_npm_run_hash-key",
       "scopes": ["phc:clients:read", "phc:stock:read", "phc:orders:write"],
-      "revoked": false,
-      "createdAt": "2026-01-01T00:00:00.000Z"
-    },
-    {
-      "id": "assistente-rh",
-      "label": "Assistente de RH (Claude)",
-      "apiKeyHash": "SUBSTITUIR_PELO_HASH_GERADO_COM_npm_run_hash-key",
-      "scopes": ["factorial:employees:read"],
       "revoked": false,
       "createdAt": "2026-01-01T00:00:00.000Z"
     }

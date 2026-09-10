@@ -220,9 +220,22 @@ Isto foi validado de ponta a ponta neste ambiente (sessão, `notifications/initi
 npm test
 ```
 
-Cobre: resolução e revogação de credenciais, verificação de permissões (incluindo scopes de conectores diferentes), o `MockPhcConnector`, o registo de auditoria (sucesso e falha), o fluxo completo de uma ferramenta (`runTool`) — incluindo o caso de pedido negado por falta de scope — e o hub HTTP de ponta a ponta: autenticação por sessão, duas sessões concorrentes com scopes diferentes isoladas uma da outra, os conectores partilhados a manter estado entre sessões independentes, e um segundo conector (Factorial) a funcionar lado a lado com o PHC no mesmo hub.
+Cobre: resolução e revogação de credenciais, perfis (roles) e restrição ao nível da linha, verificação de permissões (incluindo scopes de conectores diferentes), o `MockPhcConnector`, o registo de auditoria (sucesso e falha), o fluxo completo de uma ferramenta (`runTool`) — incluindo o caso de pedido negado por falta de scope — e o hub HTTP de ponta a ponta: autenticação por sessão, duas sessões concorrentes com scopes diferentes isoladas uma da outra, os conectores partilhados a manter estado entre sessões independentes, um segundo conector (Factorial) a funcionar lado a lado com o PHC no mesmo hub, e dois colaboradores diferentes a só conseguirem ver o seu próprio registo de RH, nunca o um do outro.
 
-## Scopes disponíveis
+## Perfis de utilizador (roles)
+
+Definidos em `src/permissions/roles.ts` — pacotes nomeados de scopes, para não teres de listar scopes um a um em cada integração. Uma integração usa `"role": "..."` em vez de (ou a somar a) `"scopes": [...]` em `config/integrations.json`:
+
+| Perfil | Scopes | O que significa |
+|---|---|---|
+| `consultor` | `phc:clients:read`, `phc:stock:read` | Vê clientes e stocks; **sem acesso a vendas** (faturas/encomendas) nem a RH |
+| `vendas` | `phc:clients:read`, `phc:stock:read`, `phc:invoices:read`, `phc:orders:write` | Acesso completo às operações comerciais do PHC |
+| `rh-admin` | `factorial:employees:read` | Vê a ficha de qualquer colaborador |
+| `colaborador` | `factorial:employees:read:self` | Só vê o seu **próprio** registo — ver secção seguinte |
+
+Ver `config/integrations.example.json` para os seis exemplos completos (um por perfil, mais um caso com scopes explícitos sem perfil).
+
+## Scopes disponíveis e restrição ao nível da linha
 
 Agregados em `src/permissions/scopes.ts` a partir de cada conector — sempre prefixados com o id do sistema, para nunca colidirem entre si:
 
@@ -233,7 +246,10 @@ Agregados em `src/permissions/scopes.ts` a partir de cada conector — sempre pr
 - `phc:orders:write` — criar encomendas
 
 **Factorial** (`src/connectors/factorial/scopes.ts`)
-- `factorial:employees:read` — consultar colaboradores
+- `factorial:employees:read` — consultar **qualquer** colaborador
+- `factorial:employees:read:self` — consultar **só o próprio** registo (restrição ao nível da linha, não só ao nível da ferramenta)
+
+O scope `:self` é diferente dos outros: não basta ter ou não ter a ferramenta — o resultado é filtrado por quem está a perguntar. Uma integração com este scope tem um `attributes.factorialEmployeeId` (ver `config/integrations.example.json`, integrações `colaborador-ana`/`colaborador-bruno`) que identifica o seu próprio registo; `phc.list_employees`/`phc.get_employee` usam-no para: (1) nunca devolver a lista completa, só o próprio registo, e (2) recusar um pedido a `get_employee` por um código que não seja o seu. Isto está implementado em `src/connectors/factorial/tools/` (não no conector — o mock/real de dados nem sabe que esta regra existe) e testado em `test/httpServer.test.ts` com dois colaboradores diferentes.
 
 Cada integração (cada API key) só usa as ferramentas cujo scope tenha atribuído em `config/integrations.json` — de um ou de vários sistemas ao mesmo tempo, se fizer sentido (ex: uma integração com `phc:clients:read` + `factorial:employees:read`). Um pedido sem o scope necessário é recusado **e continua a ficar registado na auditoria**, com o motivo da recusa.
 
@@ -246,8 +262,8 @@ Cada integração (cada API key) só usa as ferramentas cujo scope tenha atribu�
 | `phc.list_stock` | `phc:stock:read` | Lista artigos e quantidades disponíveis |
 | `phc.list_invoices` | `phc:invoices:read` | Lista faturas, com filtro por cliente |
 | `phc.create_order` | `phc:orders:write` | Cria uma encomenda de cliente (valida cliente e artigos) |
-| `factorial.list_employees` | `factorial:employees:read` | Lista colaboradores, com filtro por nome/departamento/email |
-| `factorial.get_employee` | `factorial:employees:read` | Ficha de um colaborador por código |
+| `factorial.list_employees` | `factorial:employees:read` **ou** `factorial:employees:read:self` | Lista colaboradores — todos, ou só o próprio, consoante o scope |
+| `factorial.get_employee` | `factorial:employees:read` **ou** `factorial:employees:read:self` | Ficha de um colaborador — com `:self`, só a do próprio |
 
 ## Arquitetura multi-conector — como adicionar um novo sistema
 
@@ -270,10 +286,12 @@ Nenhum destes passos mexe em auth, permissões, auditoria, nos transportes (stdi
 1. **Conectores reais** — implementar `PhcWebApiConnector` e `FactorialApiConnector` (mesmas interfaces `PhcConnector`/`FactorialConnector`) assim que houver acesso às respetivas APIs. Nenhuma outra camada muda.
 2. ~~Transporte HTTP multi-tenant~~ — feito: `src/httpServer.ts` (Streamable HTTP), uma sessão por ligação, identidade resolvida por `Authorization: Bearer` no `initialize`.
 3. ~~Arquitetura multi-conector~~ — feito: `ConnectorModule` (`src/connectors/registry.ts`), PHC e Factorial como dois conectores independentes no mesmo hub, com scopes e ferramentas prefixados.
-4. **Mais conectores** — Sage, Primavera, SAP, Odoo, seguindo a receita acima. Cada um é trabalho isolado; não há dependências entre conectores.
-5. **Deploy real** — hoje só corre localmente (`npm run dev:http`). Falta empacotar (Docker), colocar atrás de TLS/reverse proxy, e decidir onde corre dentro da infraestrutura Winsig/cliente.
-6. **Mapeamento aos perfis reais de cada sistema** — hoje os scopes são definidos manualmente; o objetivo é herdar diretamente os perfis e permissões já configurados em cada ERP/plataforma.
-7. **Ferramentas que atravessam conectores** — ex: "cria a despesa no Factorial e concilia com a fatura no PHC"; só é possível porque ambos já correm no mesmo hub, com a mesma auditoria.
-8. **Aprovação humana para escritas sensíveis** — um nível extra de confiança que os concorrentes de ERP único não oferecem: ex. encomendas acima de X€ ficam pendentes até confirmação humana.
-9. **Armazenamento de credenciais e auditoria em base de dados própria** — trocar o ficheiro JSON e o log local por uma base de dados dedicada ao hub, com consola de administração para emitir/revogar credenciais e consultar auditoria.
-10. **Expiração/renovação de sessões HTTP** — hoje as sessões ficam em memória sem limite de tempo; adicionar um timeout de inatividade.
+4. ~~Perfis de utilizador + restrição ao nível da linha~~ — feito: `src/permissions/roles.ts` (consultor/vendas/rh-admin/colaborador) e o scope `factorial:employees:read:self` (um colaborador só vê o seu próprio registo).
+5. **Mais conectores** — Sage, Primavera, SAP, Odoo, seguindo a receita acima. Cada um é trabalho isolado; não há dependências entre conectores.
+6. **Deploy real** — hoje só corre localmente (`npm run dev:http`). Falta empacotar (Docker), colocar atrás de TLS/reverse proxy, e decidir onde corre dentro da infraestrutura Winsig/cliente.
+7. **Mapeamento aos perfis reais de cada sistema** — hoje os perfis (`roles.ts`) são definidos manualmente; o objetivo é herdá-los diretamente dos perfis e permissões já configurados em cada ERP/plataforma (ex: perfis do PHC CS, grupos do Factorial).
+8. **Restrição ao nível da linha noutros conectores** — o padrão `:self` do Factorial (scope + `identity.attributes` + filtragem dentro da ferramenta) é reutilizável para qualquer dado "pessoal" — ex: um vendedor só ver as suas próprias faturas no PHC.
+9. **Ferramentas que atravessam conectores** — ex: "cria a despesa no Factorial e concilia com a fatura no PHC"; só é possível porque ambos já correm no mesmo hub, com a mesma auditoria.
+10. **Aprovação humana para escritas sensíveis** — um nível extra de confiança que os concorrentes de ERP único não oferecem: ex. encomendas acima de X€ ficam pendentes até confirmação humana.
+11. **Armazenamento de credenciais e auditoria em base de dados própria** — trocar o ficheiro JSON e o log local por uma base de dados dedicada ao hub, com consola de administração para emitir/revogar credenciais e consultar auditoria.
+12. **Expiração/renovação de sessões HTTP** — hoje as sessões ficam em memória sem limite de tempo; adicionar um timeout de inatividade.
