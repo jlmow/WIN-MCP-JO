@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import "dotenv/config";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CredentialStore, resolveIdentityOrThrow } from "./auth/credentialStore.js";
 import { FileAuditSink } from "./audit/logger.js";
@@ -13,7 +14,7 @@ async function main(): Promise<void> {
   const store = CredentialStore.fromFile(config.integrationsFile);
   const identity = resolveIdentityOrThrow(store, apiKey);
 
-  const modules = createConnectorModules();
+  const modules = await createConnectorModules();
   const auditSink = new FileAuditSink(config.auditLogFile);
   const server = buildServer(identity, modules, auditSink);
 

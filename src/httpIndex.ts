@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import "dotenv/config";
 import { FileAuditSink } from "./audit/logger.js";
 import { loadConfig } from "./config.js";
 import { createHttpHub } from "./httpServer.js";
@@ -8,7 +9,7 @@ const port = Number(process.env.WINSIG_MCP_HTTP_PORT ?? 3000);
 const host = process.env.WINSIG_MCP_HTTP_HOST ?? "127.0.0.1";
 
 const config = loadConfig();
-const modules = createConnectorModules();
+const modules = await createConnectorModules();
 const auditSink = new FileAuditSink(config.auditLogFile);
 
 const httpServer = createHttpHub({ integrationsFile: config.integrationsFile, modules, auditSink });

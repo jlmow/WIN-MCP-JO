@@ -91,21 +91,24 @@ O hub em si (`server.ts`) **não sabe nada sobre PHC ou Factorial especificament
 
 ```
 src/
-  auth/              Credenciais por integração (API key → identidade + scopes)
-  permissions/       Scopes agregados de todos os conectores + verificação de acesso
+  auth/              Credenciais por integração (API key → identidade + scopes + attributes)
+  permissions/       Scopes agregados de todos os conectores, perfis (roles.ts) + verificação de acesso
   audit/             Registo append-only de cada pedido
   tools/helpers.ts   runTool/textResult/errorResult — genéricos, usados por qualquer conector
   connectors/
     registry.ts      ConnectorModule — o "plugue" que qualquer sistema tem de implementar
     phc/             Conector Cegid PHC CS
-      types.ts         Tipos de domínio + interface PhcConnector
-      mockConnector.ts MockPhcConnector (dados fictícios)
-      scopes.ts        PHC_SCOPES ("phc:clients:read", "phc:orders:write", ...)
-      tools/           Ferramentas MCP (phc.list_clients, phc.create_order, ...)
-      module.ts        Junta tudo num ConnectorModule
+      types.ts             Tipos de domínio + interface PhcConnector
+      mockConnector.ts     MockPhcConnector (dados fictícios)
+      sqlConfig.ts         Configuração segura de ligação ao SQL Server real (a partir de env vars)
+      sqlServerConnector.ts PhcSqlServerConnector — conector real (ver "Ligar ao PHC real")
+      inspectSchemaCli.ts  Script de introspeção do esquema real (só catálogo, nunca dados)
+      scopes.ts            PHC_SCOPES ("phc:clients:read", "phc:orders:write", ...)
+      tools/               Ferramentas MCP (phc.list_clients, phc.create_order, ...)
+      module.ts            Junta tudo num ConnectorModule
     factorial/       Conector Factorial (RH) — mesmo padrão do PHC, prova o conceito
-      types.ts, mockConnector.ts, scopes.ts, tools/, module.ts
-  modules.ts         Lista de conectores ligados a este hub (hoje: PHC + Factorial)
+      types.ts, mockConnector.ts, scopes.ts, rowLevel.ts, tools/, module.ts
+  modules.ts         Escolhe mock vs. real (WINSIG_PHC_MODE) e lista os conectores ligados ao hub
   server.ts          Monta o McpServer (identidade + lista de módulos + auditSink)
   index.ts           Ponto de entrada — transporte stdio (1 processo = 1 integração)
   httpServer.ts      Hub HTTP multi-tenant (Streamable HTTP) — várias integrações
@@ -116,6 +119,7 @@ public/
 config/
   integrations.example.json   Modelo de configuração (a preencher com as tuas chaves)
   integrations.demo.json      Configuração de demonstração para o "Teste rápido"
+.env.example         Modelo de variáveis de ambiente (ligação ao SQL Server real, etc.)
 test/                Testes unitários e de integração (node:test, via tsx)
 ```
 
@@ -170,6 +174,11 @@ Cada cliente autentica-se com `Authorization: Bearer <api-key>` no pedido `initi
 | `WINSIG_MCP_AUDIT_LOG_FILE` | ambos | Não | `logs/audit.log` | Caminho para o log de auditoria (JSON Lines) |
 | `WINSIG_MCP_HTTP_PORT` | HTTP | Não | `3000` | Porta onde o hub HTTP escuta |
 | `WINSIG_MCP_HTTP_HOST` | HTTP | Não | `127.0.0.1` | Endereço onde o hub HTTP escuta |
+| `WINSIG_PHC_MODE` | ambos | Não | `mock` | `mock` (dados fictícios) ou `real` (SQL Server real — ver "Ligar ao PHC real") |
+| `WINSIG_PHC_DB_HOST`, `WINSIG_PHC_DB_NAME`, `WINSIG_PHC_DB_USER`, `WINSIG_PHC_DB_PASSWORD` | ambos | Só se `WINSIG_PHC_MODE=real` | — | Ligação ao SQL Server do PHC — ver `.env.example` |
+| `WINSIG_PHC_ALLOW_WRITES` | ambos | Não | `false` | Interruptor de segurança para escritas reais (ex: `phc.create_order`) |
+
+Variáveis podem vir de um ficheiro `.env` na raiz do projeto (copia `.env.example`) em vez de exportadas manualmente — carregado automaticamente (`dotenv`).
 
 ## Como testar o hub HTTP com `curl`
 
@@ -281,9 +290,63 @@ Para ligar um sistema novo (Sage, Primavera, SAP, Odoo, ou outro), a receita é 
 
 Nenhum destes passos mexe em auth, permissões, auditoria, nos transportes (stdio/HTTP) ou na consola de testes — todos continuam genéricos e já funcionam com qualquer número de conectores.
 
+## Ligar ao PHC real (SQL Server)
+
+> ⚠️ Isto liga o hub a uma base de dados PHC verdadeira. Lê este guia todo antes de correr o que quer que seja, e faz o primeiro teste contra uma **cópia/backup** da base de dados, não a produção viva — sobretudo antes de ativares escrita.
+
+### Modelo de segurança
+
+- **Ligação cifrada por default** (`encrypt: true`). `trustServerCertificate` só fica ligado se pedires explicitamente — necessário para um SQL Server local de teste com certificado autoassinado, mas nunca em produção.
+- **Credenciais nunca no código nem no git** — vêm de `.env` (que está no `.gitignore`) ou de variáveis de ambiente do sistema. Usa `.env.example` como modelo.
+- **Login SQL dedicado, nunca `sa` ou o admin do PHC.** Pede a quem administra o SQL Server para criar um login só de leitura (ou leitura + escrita nas tabelas específicas, se e quando ativares escrita), algo como:
+  ```sql
+  CREATE LOGIN winsig_mcp_readonly WITH PASSWORD = 'uma-password-forte-aqui';
+  USE NomeDaBaseDeDadosDoPHC;
+  CREATE USER winsig_mcp_readonly FOR LOGIN winsig_mcp_readonly;
+  GRANT SELECT ON dbo.cl TO winsig_mcp_readonly;   -- clientes
+  GRANT SELECT ON dbo.st TO winsig_mcp_readonly;   -- stocks
+  GRANT SELECT ON dbo.ft TO winsig_mcp_readonly;   -- faturas (cabeçalho)
+  GRANT SELECT ON dbo.fi TO winsig_mcp_readonly;   -- faturas (linhas)
+  -- (nomes de tabela a confirmar — ver "Descobrir o esquema real" abaixo)
+  ```
+- **Escritas desligadas por default** (`WINSIG_PHC_ALLOW_WRITES=false`). Mesmo ligadas, `phc.create_order` recusa-se a correr (`WriteNotImplementedError`) até alguém confirmar as regras reais de numeração/documentos do PHC — ver "Sobre a escrita" abaixo.
+- **Queries sempre parametrizadas** (`request.input(...)`, nunca concatenação de texto do utilizador) — o de sempre contra SQL injection.
+- **Auditoria já cobre isto sem mudanças** — cada pedido a `phc.*` continua a ficar registado em `logs/audit.log`, agora com dados reais em vez de mock.
+
+### Passo 1 — Configurar a ligação
+
+```bash
+cp .env.example .env
+```
+Edita o `.env`: `WINSIG_PHC_MODE=real`, mais `WINSIG_PHC_DB_HOST`, `WINSIG_PHC_DB_NAME`, `WINSIG_PHC_DB_USER`, `WINSIG_PHC_DB_PASSWORD` (ver comentários no próprio ficheiro — inclui notas sobre porta vs. instância nomeada, e sobre PHC estar noutra máquina da rede se este hub correr num Mac/Linux).
+
+### Passo 2 — Descobrir o esquema real (obrigatório antes de confiares em resultados)
+
+```bash
+npm run inspect-phc-schema                    # lista todas as tabelas
+npm run inspect-phc-schema -- cl              # colunas da tabela "cl" (ex: clientes)
+```
+Isto só lê o catálogo do SQL Server (nomes/tipos) — nunca uma linha de dados de negócio. `src/connectors/phc/sqlServerConnector.ts` tem uma melhor tentativa de mapeamento (tabelas `cl`/`st`/`ft`/`fi`, convenção comum do PHC CS) marcada com comentários `// PHC:` — confirma/ajusta esses nomes contra o que a introspeção mostrar antes de confiar nos resultados.
+
+### Passo 3 — Testar leitura
+
+```bash
+npm run build
+npm run dev:http
+```
+Usa a consola (`http://localhost:3000`) ou o `curl` como já fizeste com os dados mock — agora com uma API key real de `config/integrations.json` (`WINSIG_PHC_MODE=real` não muda nada na autenticação/scopes/perfis, só a fonte dos dados).
+
+### Sobre a escrita (`phc.create_order`)
+
+Deliberadamente **não implementei** a query de escrita real. Ler dados errados é um problema recuperável (repara-se); escrever numa tabela errada, ou sem respeitar a numeração/triggers que o PHC normalmente garante, pode corromper dados reais de forma não trivial de reverter. Antes de implementar:
+
+1. Confirma com quem administra o PHC como são criados documentos de venda (tabela de tipos de documento, sequência de numeração, triggers de atualização de stock).
+2. Testa a query de escrita contra uma **cópia/backup**, nunca a produção, primeiro.
+3. Só depois preencher `PhcSqlServerConnector.createOrder()` e ativar `WINSIG_PHC_ALLOW_WRITES=true`.
+
 ## Roteiro / próximos passos
 
-1. **Conectores reais** — implementar `PhcWebApiConnector` e `FactorialApiConnector` (mesmas interfaces `PhcConnector`/`FactorialConnector`) assim que houver acesso às respetivas APIs. Nenhuma outra camada muda.
+1. ~~Conector real do PHC (leitura)~~ — feito: `PhcSqlServerConnector` liga por SQL Server direto (`WINSIG_PHC_MODE=real`); queries por confirmar contra o esquema real com `npm run inspect-phc-schema`. Falta ainda: `FactorialApiConnector` real, e a escrita real de `phc.create_order` (ver "Sobre a escrita" acima).
 2. ~~Transporte HTTP multi-tenant~~ — feito: `src/httpServer.ts` (Streamable HTTP), uma sessão por ligação, identidade resolvida por `Authorization: Bearer` no `initialize`.
 3. ~~Arquitetura multi-conector~~ — feito: `ConnectorModule` (`src/connectors/registry.ts`), PHC e Factorial como dois conectores independentes no mesmo hub, com scopes e ferramentas prefixados.
 4. ~~Perfis de utilizador + restrição ao nível da linha~~ — feito: `src/permissions/roles.ts` (consultor/vendas/rh-admin/colaborador) e o scope `factorial:employees:read:self` (um colaborador só vê o seu próprio registo).
